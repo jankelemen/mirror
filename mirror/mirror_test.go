@@ -340,3 +340,9 @@ func assertError(t testing.TB, want, got error) {
 		t.Fatalf("wrong error, want %q, got %q", want, got)
 	}
 }
+
+func init() {
+	if err := TruncateLogFile(); err != nil {
+		panic(err)
+	}
+}

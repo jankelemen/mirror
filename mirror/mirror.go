@@ -364,7 +364,7 @@ func LogToFile(w io.Writer, message string) {
 }
 
 func TruncateLogFile() error {
-	err := os.Truncate(LogFile, 0)
+	err := os.WriteFile(LogFile, nil, FilePerm)
 	return err
 }
 
