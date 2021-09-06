@@ -11,6 +11,3 @@
 
 # Ignore all dirs that start with dot
 .*/
-
-# Ignore my personal Makefile
-Makefile
