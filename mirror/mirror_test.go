@@ -25,6 +25,12 @@ const (
 	dstPathTest = "dst"
 )
 
+func init() {
+	if err := TruncateLogFile(); err != nil {
+		panic(err)
+	}
+}
+
 func TestVetFlags(t *testing.T) {
 	makeTestFolders(t)
 
@@ -338,11 +344,5 @@ func assertError(t testing.TB, want, got error) {
 
 	if !errors.Is(want, got) {
 		t.Fatalf("wrong error, want %q, got %q", want, got)
-	}
-}
-
-func init() {
-	if err := TruncateLogFile(); err != nil {
-		panic(err)
 	}
 }
