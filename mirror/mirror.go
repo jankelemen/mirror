@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -228,9 +229,16 @@ func CleanFolders(folders Folder, path string) error {
 	}
 	LogToFile(f, LogCleanedFolders+"\n")
 
+	var sortedFolders []string
 	for folder := range folders {
-		fullPath := filepath.Join(path, folder)
-		if err = os.Remove(fullPath); err != nil {
+		sortedFolders = append(sortedFolders, filepath.Join(path, folder))
+	}
+	sort.Slice(sortedFolders, func(i, j int) bool {
+		return sortedFolders[i] > sortedFolders[j]
+	})
+
+	for _, folder := range sortedFolders {
+		if err = os.Remove(folder); err != nil {
 			return err
 		}
 		LogToFile(f, folder)
