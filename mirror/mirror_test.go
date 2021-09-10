@@ -164,7 +164,7 @@ func TestCopyFiles(t *testing.T) {
 	err = CopyFiles(missingFiles, sizeOfMissingFiles, srcPathTest, dstPathTest)
 	assertError(t, nil, err)
 
-	err = CleanFiles(filesToClean, dstPathTest)
+	err = CleanFiles(filesToClean, sizeOfFilesToClean, dstPathTest)
 	assertError(t, nil, err)
 
 	_, src, err := ReadFolder(srcPathTest)
@@ -184,7 +184,7 @@ func TestCleanFiles(t *testing.T) {
 	err := CopyFiles(missingFiles, sizeOfMissingFiles, srcPathTest, dstPathTest)
 	assertError(t, nil, err)
 
-	err = CleanFiles(filesToClean, dstPathTest)
+	err = CleanFiles(filesToClean, sizeOfFilesToClean, dstPathTest)
 	assertError(t, nil, err)
 
 	_, src, err := ReadFolder(srcPathTest)
@@ -229,9 +229,9 @@ func TestThousandSeparator(t *testing.T) {
 	tests := []struct {
 		name, input, expected string
 	}{
-		{name: "no apostrophe", input: "100", expected: "100"},
-		{name: "one apostrophe", input: "1000", expected: "1'000"},
-		{name: "three apostrophes", input: "10000000000", expected: "10'000'000'000"},
+		{name: "no space", input: "100", expected: "100"},
+		{name: "one space", input: "1000", expected: "1 000"},
+		{name: "three spaces", input: "10000000000", expected: "10 000 000 000"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -240,6 +240,43 @@ func TestThousandSeparator(t *testing.T) {
 				t.Errorf("input %q, got %q, expexted %q", test.input, got, test.expected)
 			}
 		})
+	}
+}
+
+func TestSortFoldersOrFiles2(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    interface{}
+		expected []string
+	}{
+		{name: "sort folders", input: Folder{"a/b/c": {}, "a": {}, "q": {}, "f/a": {}}, expected: []string{"a", "a/b/c", "f/a", "q"}},
+		{name: "sort files", input: File{"a/b/c": 1, "a": 1, "q": 1, "f/a": 1}, expected: []string{"a", "a/b/c", "f/a", "q"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := sortFoldersOrFiles(test.input)
+			if !reflect.DeepEqual(got, test.expected) {
+				t.Errorf("input %v, got %v, expected %v", test.input, got, test.expected)
+			}
+		})
+	}
+}
+
+func TestKeepFoldersWithLongestPrefix(t *testing.T) {
+	input := Folder{"a/b/c": {}, "a": {}, "a/b": {}, "q": {}, "g": {}}
+	expected := []string{"a/b/c", "g", "q"}
+	got := keepFoldersWithLongestPrefix(input)
+	if !reflect.DeepEqual(got, expected) {
+		t.Errorf("input %v, got %v, expected %v", input, got, expected)
+	}
+}
+
+func TestKeepFoldersWithShortestPrefix(t *testing.T) {
+	input := Folder{"a/b/c": {}, "a": {}, "a/b": {}, "q": {}, "g": {}}
+	expected := []string{"q", "g", "a"}
+	got := keepFoldersWithShortestPrefix(input)
+	if !reflect.DeepEqual(got, expected) {
+		t.Errorf("input %v, got %v, expected %v", input, got, expected)
 	}
 }
 

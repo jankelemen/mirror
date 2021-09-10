@@ -4,37 +4,40 @@ package mirror
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 )
 
 const (
-	ErrWrongArgs        = CustomErr("wrong arguments, use the -h flag for help")
-	ErrSrcNotFound      = CustomErr("source folder doesn't exist")
-	ErrDstNotFound      = CustomErr("destination folder doesn't exist")
-	FolderToIgnore      = "dont_mirror"
-	LogFile             = "log"
-	BytesInMB           = 1e6
-	FolderPerm          = 0755
-	FilePerm            = 0644
-	LogMadeFolders      = "directories made:"
-	LogCleanedFolders   = "directories removed:"
-	LogCopiedFiles      = "files copied:"
-	LogCleanedFiles     = "files removed:"
-	MsgDone             = "done"
-	MsgCopyProgress     = "copying files:"
-	MsgCleaningProgress = "removing files:"
-	FlagNameSrc         = "src"
-	FlagNameDst         = "dst"
-	FlagNameC           = "c"
-	FlagUsageSrc        = "source folder"
-	FlagUsageDst        = "destination folder"
-	FlagUsageC          = "cleaning mode"
+	ErrWrongArgs               = CustomErr("wrong arguments, use the -h flag for help")
+	ErrSrcNotFound             = CustomErr("source folder doesn't exist")
+	ErrDstNotFound             = CustomErr("destination folder doesn't exist")
+	FolderToIgnore             = "dont_mirror"
+	LogFile                    = "log"
+	BytesInMB                  = 1e6
+	FolderPerm                 = 0755
+	FilePerm                   = 0644
+	LogMadeFolders             = "directories made: (if a folder had some parent directories, they were also created)"
+	LogCleanedFolders          = "directories removed: (if a folder had some subdirectories, they were also removed)"
+	LogCopiedFiles             = "files copied:"
+	LogCleanedFiles            = "files removed:"
+	MsgProgressCopyingFiles    = "copying files:"
+	MsgProgressMakingFolders   = "making folders:"
+	MsgProgressCleaningFiles   = "removing files:"
+	MsgProgressCleaningFolders = "removing folders:"
+	FlagNameSrc                = "src"
+	FlagNameDst                = "dst"
+	FlagNameC                  = "c"
+	FlagUsageSrc               = "source folder"
+	FlagUsageDst               = "destination folder"
+	FlagUsageC                 = "cleaning mode"
 )
 
 type (
@@ -195,21 +198,22 @@ func FilesToClean(dst, src File) (res File, totalSize int64) {
 
 // MakeFolders makes directories with os.MkdirAll in path directory and logs progress
 func MakeFolders(folders Folder, path string) error {
-	f, err := os.OpenFile(LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, FilePerm)
+	var progressInPercentage, counter int
+
+	f, err := initLogFile()
 	if err != nil {
 		return err
 	}
 
-	if err = WriteNewLineIfNotEmpty(f); err != nil {
-		return err
-	}
 	LogToFile(f, LogMadeFolders+"\n")
 
-	for folder := range folders {
-		fullPath := filepath.Join(path, folder)
-		if err = os.MkdirAll(fullPath, FolderPerm); err != nil {
+	for _, folder := range keepFoldersWithLongestPrefix(folders) {
+		if err = os.MkdirAll(filepath.Join(path, folder), FolderPerm); err != nil {
 			return err
 		}
+
+		logProgressFolders(&progressInPercentage, &counter, len(folders), fmt.Sprintf("%s %d%%", MsgProgressMakingFolders, progressInPercentage))
+
 		LogToFile(f, folder)
 	}
 
@@ -217,30 +221,24 @@ func MakeFolders(folders Folder, path string) error {
 	return err
 }
 
-// CleanFolders removes directories with os.Remove in path directory and logs progress
+// CleanFolders removes directories with os.RemoveAll in path directory and logs progress
 func CleanFolders(folders Folder, path string) error {
-	f, err := os.OpenFile(LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, FilePerm)
+	var progressInPercentage, counter int
+
+	f, err := initLogFile()
 	if err != nil {
 		return err
 	}
 
-	if err = WriteNewLineIfNotEmpty(f); err != nil {
-		return err
-	}
 	LogToFile(f, LogCleanedFolders+"\n")
 
-	var sortedFolders []string
-	for folder := range folders {
-		sortedFolders = append(sortedFolders, filepath.Join(path, folder))
-	}
-	sort.Slice(sortedFolders, func(i, j int) bool {
-		return sortedFolders[i] > sortedFolders[j]
-	})
-
-	for _, folder := range sortedFolders {
-		if err = os.Remove(folder); err != nil {
+	for _, folder := range keepFoldersWithShortestPrefix(folders) {
+		if err = os.RemoveAll(filepath.Join(path, folder)); err != nil {
 			return err
 		}
+
+		logProgressFolders(&progressInPercentage, &counter, len(folders), fmt.Sprintf("%s %d%%", MsgProgressCleaningFolders, progressInPercentage))
+
 		LogToFile(f, folder)
 	}
 
@@ -251,20 +249,15 @@ func CleanFolders(folders Folder, path string) error {
 // CopyFiles copies files and logs progress. The 'files' parameter should contain relative paths
 func CopyFiles(files File, totalSize int64, src, dst string) error {
 	var bytesWritten, progressInPercentage int64
-	// howOftenToLog is in percentage
-	var howOftenToLog int64 = 10
 
-	l, err := os.OpenFile(LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, FilePerm)
+	l, err := initLogFile()
 	if err != nil {
 		return err
 	}
 
-	if err = WriteNewLineIfNotEmpty(l); err != nil {
-		return err
-	}
 	LogToFile(l, LogCopiedFiles+"\n")
 
-	for file := range files {
+	for _, file := range sortFoldersOrFiles(files) {
 		s, err := os.Open(filepath.Join(src, file))
 		if err != nil {
 			return err
@@ -288,10 +281,7 @@ func CopyFiles(files File, totalSize int64, src, dst string) error {
 			return err
 		}
 
-		if totalSize > 0 && bytesWritten*100/totalSize > progressInPercentage {
-			log.Printf("%s %d%%\n", MsgCopyProgress, progressInPercentage)
-			progressInPercentage += howOftenToLog
-		}
+		logProgressFiles(&progressInPercentage, totalSize, bytesWritten, fmt.Sprintf("%s %d%%", MsgProgressCopyingFiles, progressInPercentage))
 
 		LogToFile(l, file)
 	}
@@ -300,37 +290,32 @@ func CopyFiles(files File, totalSize int64, src, dst string) error {
 		return err
 	}
 
-	log.Println(MsgDone)
 	return nil
 }
 
 // CleanFiles removes files and logs progress. The 'files' parameter should contain relative paths
-func CleanFiles(files File, path string) error {
-	var progressInPercentage, counter int
-	// howOftenToLog is in percentage
-	howOftenToLog := 10
+func CleanFiles(files File, totalSize int64, path string) error {
+	var bytesDeleted, progressInPercentage int64
 
-	l, err := os.OpenFile(LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, FilePerm)
+	l, err := initLogFile()
 	if err != nil {
 		return err
 	}
 
-	if err = WriteNewLineIfNotEmpty(l); err != nil {
-		return err
-	}
 	LogToFile(l, LogCleanedFiles+"\n")
 
-	for file := range files {
+	for _, file := range sortFoldersOrFiles(files) {
+		info, err := os.Stat(filepath.Join(path, file))
+		if err != nil {
+			return err
+		}
+		bytesDeleted += info.Size()
+
 		if err = os.Remove(filepath.Join(path, file)); err != nil {
 			return err
 		}
 
-		counter++
-
-		if counter*100/len(files) > progressInPercentage {
-			log.Printf("%s %d%%\n", MsgCleaningProgress, progressInPercentage)
-			progressInPercentage += howOftenToLog
-		}
+		logProgressFiles(&progressInPercentage, totalSize, bytesDeleted, fmt.Sprintf("%s %d%%", MsgProgressCleaningFiles, progressInPercentage))
 
 		LogToFile(l, file)
 	}
@@ -339,16 +324,15 @@ func CleanFiles(files File, path string) error {
 		return err
 	}
 
-	log.Println(MsgDone)
 	return nil
 }
 
-// ThousandSeparator adds apostrophe after each thousand: 1000000 -> 1'000'000
+// ThousandSeparator adds space after each thousand: 1000000 -> 1 000 000
 func ThousandSeparator(n string) string {
 	if len(n) < 4 {
 		return n
 	}
-	return ThousandSeparator(n[:len(n)-3]) + "'" + n[len(n)-3:]
+	return ThousandSeparator(n[:len(n)-3]) + " " + n[len(n)-3:]
 }
 
 // WriteNewLineIfNotEmpty writes a new line into a file if it's not empty
@@ -378,4 +362,80 @@ func TruncateLogFile() error {
 
 func BytesToMB(size int64) string {
 	return ThousandSeparator(strconv.FormatInt(size/BytesInMB, 10))
+}
+
+func logProgressFiles(progressInPercentage *int64, totalSize, bytesWritten int64, msg string) {
+	// howOftenToLog is in percentage
+	var howOftenToLog int64 = 10
+
+	if totalSize > 0 && bytesWritten*100/totalSize > *progressInPercentage {
+		log.Println(msg)
+		*progressInPercentage += howOftenToLog
+	}
+}
+
+func logProgressFolders(progressInPercentage, counter *int, foldersLen int, msg string) {
+	// howOftenToLog is in percentage
+	howOftenToLog := 10
+	*counter++
+
+	if *counter*100/foldersLen > *progressInPercentage {
+		log.Println(msg)
+		*progressInPercentage += howOftenToLog
+	}
+	return
+}
+
+func sortFoldersOrFiles(m interface{}) []string {
+	_, isFolder := m.(Folder)
+	_, isFile := m.(File)
+
+	if !isFolder && !isFile {
+		panic("the function accepts only files and folders")
+	}
+
+	res := make([]string, 0, reflect.ValueOf(m).Len())
+	for _, v := range reflect.ValueOf(m).MapKeys() {
+		res = append(res, v.String())
+	}
+
+	sort.Slice(res, func(i, j int) bool {
+		return res[i] < res[j]
+	})
+	return res
+}
+
+func initLogFile() (logFile *os.File, err error) {
+	logFile, err = os.OpenFile(LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, FilePerm)
+	if err != nil {
+		return
+	}
+	err = WriteNewLineIfNotEmpty(logFile)
+	return
+}
+
+func keepFoldersWithLongestPrefix(folders Folder) (res []string) {
+	sorted := sortFoldersOrFiles(folders)
+
+	for i := 0; i < len(folders)-1; i++ {
+		if !strings.HasPrefix(sorted[i+1], sorted[i]) {
+			res = append(res, sorted[i])
+		}
+	}
+	res = append(res, sorted[len(folders)-1])
+
+	return
+}
+
+func keepFoldersWithShortestPrefix(folders Folder) (res []string) {
+	sorted := sortFoldersOrFiles(folders)
+
+	for i := len(folders) - 1; i > 0; i-- {
+		if !strings.HasPrefix(sorted[i], sorted[i-1]) {
+			res = append(res, sorted[i])
+		}
+	}
+	res = append(res, sorted[0])
+
+	return
 }

@@ -15,6 +15,8 @@ const (
 	MsgLogging     = "Also a log file named 'log' will be generated."
 	MsgNothingToDo = "there is nothing to do"
 	MsgErrOccurred = "an error occurred"
+	MsgFinished    = "the program finished successfully"
+	MsgDone        = "done"
 )
 
 func main() {
@@ -26,17 +28,19 @@ func main() {
 	} else {
 		doCopying(dst, src)
 	}
+
+	log.Println(MsgFinished)
 }
 
 func doCopying(dst, src string) {
 	if !mirror.AskQuestion(fmt.Sprintf("files from %q will be copied to %q. %s", src, dst, MgsAreYouSure)) {
-		log.Fatalln(MsgCanceling)
+		exitWithZero(MsgCanceling)
 	}
 
 	missingFolders, missingFiles, totalSize := srcDstDiff(dst, src, false)
 
 	if !mirror.AskQuestion(fmt.Sprintf("%d files will be coppied (%s MB) and %d folders will be created. %s %s", len(missingFiles), mirror.BytesToMB(totalSize), len(missingFolders), MsgLogging, MgsAreYouSure)) {
-		log.Fatalln(MsgCanceling)
+		exitWithZero(MsgCanceling)
 	}
 
 	err := mirror.TruncateLogFile()
@@ -45,36 +49,40 @@ func doCopying(dst, src string) {
 	if len(missingFolders) > 0 {
 		err = mirror.MakeFolders(missingFolders, dst)
 		checkErr(err)
+		log.Println(MsgDone)
 	}
 
 	if len(missingFiles) > 0 {
 		err = mirror.CopyFiles(missingFiles, totalSize, src, dst)
 		checkErr(err)
+		log.Println(MsgDone)
 	}
 }
 
 func doCleaning(dst, src string) {
 	if !mirror.AskQuestion(fmt.Sprintf("files may be deleted in the %q folder. %s", dst, MgsAreYouSure)) {
-		log.Fatalln(MsgCanceling)
+		exitWithZero(MsgCanceling)
 	}
 
 	foldersToClean, filesToClean, totalSize := srcDstDiff(dst, src, true)
 
-	if !mirror.AskQuestion(fmt.Sprintf("%d files and %d folders will be deleted (%s MB). %s %s", len(filesToClean), len(foldersToClean), mirror.BytesToMB(totalSize), MsgLogging, MgsAreYouSure)) {
-		log.Fatalln(MsgCanceling)
+	if !mirror.AskQuestion(fmt.Sprintf("%d files (%s MB) and %d folders will be deleted. %s %s", len(filesToClean), mirror.BytesToMB(totalSize), len(foldersToClean), MsgLogging, MgsAreYouSure)) {
+		exitWithZero(MsgCanceling)
 	}
 
 	err := mirror.TruncateLogFile()
 	checkErr(err)
 
 	if len(filesToClean) > 0 {
-		err = mirror.CleanFiles(filesToClean, dst)
+		err = mirror.CleanFiles(filesToClean, totalSize, dst)
 		checkErr(err)
+		log.Println(MsgDone)
 	}
 
 	if len(foldersToClean) > 0 {
 		err = mirror.CleanFolders(foldersToClean, dst)
 		checkErr(err)
+		log.Println(MsgDone)
 	}
 }
 
@@ -96,8 +104,7 @@ func srcDstDiff(dst, src string, cleaningMod bool) (folders mirror.Folder, files
 	}
 
 	if len(files) == 0 && len(folders) == 0 {
-		log.Println(MsgNothingToDo)
-		os.Exit(0)
+		exitWithZero(MsgNothingToDo)
 	}
 
 	return
@@ -107,4 +114,9 @@ func checkErr(err error) {
 	if err != nil {
 		log.Fatalln(MsgErrOccurred, err)
 	}
+}
+
+func exitWithZero(msg string) {
+	log.Println(msg)
+	os.Exit(0)
 }
