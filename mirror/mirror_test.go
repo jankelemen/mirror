@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -263,8 +262,8 @@ func TestSortFoldersOrFiles2(t *testing.T) {
 }
 
 func TestKeepFoldersWithLongestPrefix(t *testing.T) {
-	input := Folder{"a/b/c": {}, "a": {}, "a/b": {}, "q": {}, "g": {}}
-	expected := []string{"a/b/c", "g", "q"}
+	input := Folder{"a/b/c": {}, "a": {}, "a/b": {}, "q": {}, "g": {}, "a/b/cc": {}, "aa": {}}
+	expected := []string{"a/b/c", "a/b/cc", "aa", "g", "q"}
 	got := keepFoldersWithLongestPrefix(input)
 	if !reflect.DeepEqual(got, expected) {
 		t.Errorf("input %v, got %v, expected %v", input, got, expected)
@@ -272,8 +271,8 @@ func TestKeepFoldersWithLongestPrefix(t *testing.T) {
 }
 
 func TestKeepFoldersWithShortestPrefix(t *testing.T) {
-	input := Folder{"a/b/c": {}, "a": {}, "a/b": {}, "q": {}, "g": {}}
-	expected := []string{"q", "g", "a"}
+	input := Folder{"a/b/c": {}, "a": {}, "a/b": {}, "q": {}, "g": {}, "a/b/cc": {}, "aa": {}}
+	expected := []string{"q", "g", "aa", "a/b/cc", "a"}
 	got := keepFoldersWithShortestPrefix(input)
 	if !reflect.DeepEqual(got, expected) {
 		t.Errorf("input %v, got %v, expected %v", input, got, expected)
@@ -300,24 +299,24 @@ func makeTestSrcFolder(t testing.TB) {
 	t.Helper()
 
 	// make folders
-	err := os.MkdirAll(mcpp(srcPathTest+"/same_1/same_2/not_in_dst"), FolderPerm)
+	err := os.MkdirAll(filepath.Join(srcPathTest+"/same_1/same_2/not_in_dst"), FolderPerm)
 	assertError(t, nil, err)
 
-	srcFolders = Folder{"same_1": {}, mcpp("same_1/same_2"): {}, mcpp("same_1/same_2/not_in_dst"): {}}
-	missingFolders = Folder{mcpp("same_1/same_2/not_in_dst"): {}}
+	srcFolders = Folder{"same_1": {}, filepath.Join("same_1/same_2"): {}, filepath.Join("same_1/same_2/not_in_dst"): {}}
+	missingFolders = Folder{filepath.Join("same_1/same_2/not_in_dst"): {}}
 
 	// make files
-	err = ioutil.WriteFile(mcpp(srcPathTest+"/_same_1"), []byte("s"), FilePerm)
+	err = ioutil.WriteFile(filepath.Join(srcPathTest+"/_same_1"), []byte("s"), FilePerm)
 	assertError(t, nil, err)
 
-	err = ioutil.WriteFile(mcpp(srcPathTest+"/same_1/same_2/_not_in_dst"), []byte("n"), FilePerm)
+	err = ioutil.WriteFile(filepath.Join(srcPathTest+"/same_1/same_2/_not_in_dst"), []byte("n"), FilePerm)
 	assertError(t, nil, err)
 
-	err = ioutil.WriteFile(mcpp(srcPathTest+"/same_1/_different"), []byte("dd"), FilePerm)
+	err = ioutil.WriteFile(filepath.Join(srcPathTest+"/same_1/_different"), []byte("dd"), FilePerm)
 	assertError(t, nil, err)
 
-	srcFiles = File{"_same_1": 1, mcpp("same_1/same_2/_not_in_dst"): 1, mcpp("same_1/_different"): 2}
-	missingFiles = File{mcpp("same_1/same_2/_not_in_dst"): 1, mcpp("same_1/_different"): 2}
+	srcFiles = File{"_same_1": 1, filepath.Join("same_1/same_2/_not_in_dst"): 1, filepath.Join("same_1/_different"): 2}
+	missingFiles = File{filepath.Join("same_1/same_2/_not_in_dst"): 1, filepath.Join("same_1/_different"): 2}
 
 	sizeOfMissingFiles = 3
 
@@ -328,24 +327,24 @@ func makeTestDstFolder(t testing.TB) {
 	t.Helper()
 
 	// make folders
-	err := os.MkdirAll(mcpp(dstPathTest+"/same_1/same_2/not_in_src"), FolderPerm)
+	err := os.MkdirAll(filepath.Join(dstPathTest+"/same_1/same_2/not_in_src"), FolderPerm)
 	assertError(t, nil, err)
 
-	dstFolders = Folder{"same_1": {}, mcpp("same_1/same_2"): {}, mcpp("same_1/same_2/not_in_src"): {}}
-	foldersToClean = Folder{mcpp("same_1/same_2/not_in_src"): {}}
+	dstFolders = Folder{"same_1": {}, filepath.Join("same_1/same_2"): {}, filepath.Join("same_1/same_2/not_in_src"): {}}
+	foldersToClean = Folder{filepath.Join("same_1/same_2/not_in_src"): {}}
 
 	// make files
-	err = ioutil.WriteFile(mcpp(dstPathTest+"/_same_1"), []byte("s"), FilePerm)
+	err = ioutil.WriteFile(filepath.Join(dstPathTest+"/_same_1"), []byte("s"), FilePerm)
 	assertError(t, nil, err)
 
-	err = ioutil.WriteFile(mcpp(dstPathTest+"/same_1/same_2/_not_in_src"), []byte("n"), FilePerm)
+	err = ioutil.WriteFile(filepath.Join(dstPathTest+"/same_1/same_2/_not_in_src"), []byte("n"), FilePerm)
 	assertError(t, nil, err)
 
-	err = ioutil.WriteFile(mcpp(dstPathTest+"/same_1/_different"), []byte("d"), FilePerm)
+	err = ioutil.WriteFile(filepath.Join(dstPathTest+"/same_1/_different"), []byte("d"), FilePerm)
 	assertError(t, nil, err)
 
-	dstFiles = File{"_same_1": 1, mcpp("same_1/same_2/_not_in_src"): 1, mcpp("same_1/_different"): 1}
-	filesToClean = File{mcpp("same_1/same_2/_not_in_src"): 1}
+	dstFiles = File{"_same_1": 1, filepath.Join("same_1/same_2/_not_in_src"): 1, filepath.Join("same_1/_different"): 1}
+	filesToClean = File{filepath.Join("same_1/same_2/_not_in_src"): 1}
 
 	sizeOfFilesToClean = 1
 
@@ -360,12 +359,6 @@ func setFlags(t testing.TB, dst, src string, c bool) {
 
 	os.Args = os.Args[:1]
 	os.Args = append(os.Args, "-"+FlagNameDst, dst, "-"+FlagNameSrc, src, "-"+FlagNameC, strconv.FormatBool(c))
-}
-
-// mcpp makes a cross-platform path from unix path
-func mcpp(unixPath string) string {
-	pathSplit := strings.Split(unixPath, "/")
-	return filepath.Join(pathSplit...)
 }
 
 func assert(t testing.TB, want, got interface{}) {

@@ -4,7 +4,6 @@ package mirror
 import (
 	"bufio"
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -19,6 +18,7 @@ const (
 	ErrWrongArgs               = CustomErr("wrong arguments, use the -h flag for help")
 	ErrSrcNotFound             = CustomErr("source folder doesn't exist")
 	ErrDstNotFound             = CustomErr("destination folder doesn't exist")
+	ErrOnlyFoldersOrFiles      = CustomErr("the function accepts only folders and files")
 	FolderToIgnore             = "dont_mirror"
 	LogFile                    = "log"
 	BytesInMB                  = 1e6
@@ -120,7 +120,6 @@ func readFolder(path string, startingPath string, folders Folder, files File) er
 	}
 
 	for _, item := range items {
-
 		currentName := item.Name()
 		currentPath := filepath.Join(path, currentName)
 		currentTrimmedPath, err := filepath.Rel(startingPath, currentPath)
@@ -140,7 +139,9 @@ func readFolder(path string, startingPath string, folders Folder, files File) er
 			if err != nil {
 				return err
 			}
-			files[currentTrimmedPath] = info.Size()
+			if info.Mode()&os.ModeSymlink != os.ModeSymlink {
+				files[currentTrimmedPath] = info.Size()
+			}
 		}
 	}
 	return nil
@@ -198,7 +199,7 @@ func FilesToClean(dst, src File) (res File, totalSize int64) {
 
 // MakeFolders makes directories with os.MkdirAll in path directory and logs progress
 func MakeFolders(folders Folder, path string) error {
-	var progressInPercentage, counter int
+	var recentlyLoggedProgress, counter int
 
 	f, err := initLogFile()
 	if err != nil {
@@ -207,12 +208,13 @@ func MakeFolders(folders Folder, path string) error {
 
 	LogToFile(f, LogMadeFolders+"\n")
 
-	for _, folder := range keepFoldersWithLongestPrefix(folders) {
+	sortedFolders := keepFoldersWithLongestPrefix(folders)
+	for _, folder := range sortedFolders {
 		if err = os.MkdirAll(filepath.Join(path, folder), FolderPerm); err != nil {
 			return err
 		}
 
-		logProgressFolders(&progressInPercentage, &counter, len(folders), fmt.Sprintf("%s %d%%", MsgProgressMakingFolders, progressInPercentage))
+		logProgressFolders(&recentlyLoggedProgress, &counter, len(sortedFolders), MsgProgressMakingFolders)
 
 		LogToFile(f, folder)
 	}
@@ -223,7 +225,7 @@ func MakeFolders(folders Folder, path string) error {
 
 // CleanFolders removes directories with os.RemoveAll in path directory and logs progress
 func CleanFolders(folders Folder, path string) error {
-	var progressInPercentage, counter int
+	var recentlyLoggedProgress, counter int
 
 	f, err := initLogFile()
 	if err != nil {
@@ -232,12 +234,13 @@ func CleanFolders(folders Folder, path string) error {
 
 	LogToFile(f, LogCleanedFolders+"\n")
 
-	for _, folder := range keepFoldersWithShortestPrefix(folders) {
+	sortedFolders := keepFoldersWithShortestPrefix(folders)
+	for _, folder := range sortedFolders {
 		if err = os.RemoveAll(filepath.Join(path, folder)); err != nil {
 			return err
 		}
 
-		logProgressFolders(&progressInPercentage, &counter, len(folders), fmt.Sprintf("%s %d%%", MsgProgressCleaningFolders, progressInPercentage))
+		logProgressFolders(&recentlyLoggedProgress, &counter, len(sortedFolders), MsgProgressCleaningFolders)
 
 		LogToFile(f, folder)
 	}
@@ -248,7 +251,7 @@ func CleanFolders(folders Folder, path string) error {
 
 // CopyFiles copies files and logs progress. The 'files' parameter should contain relative paths
 func CopyFiles(files File, totalSize int64, src, dst string) error {
-	var bytesWritten, progressInPercentage int64
+	var bytesWritten, recentlyLoggedProgress int64
 
 	l, err := initLogFile()
 	if err != nil {
@@ -281,7 +284,7 @@ func CopyFiles(files File, totalSize int64, src, dst string) error {
 			return err
 		}
 
-		logProgressFiles(&progressInPercentage, totalSize, bytesWritten, fmt.Sprintf("%s %d%%", MsgProgressCopyingFiles, progressInPercentage))
+		logProgressFiles(&recentlyLoggedProgress, totalSize, bytesWritten, MsgProgressCopyingFiles)
 
 		LogToFile(l, file)
 	}
@@ -295,7 +298,7 @@ func CopyFiles(files File, totalSize int64, src, dst string) error {
 
 // CleanFiles removes files and logs progress. The 'files' parameter should contain relative paths
 func CleanFiles(files File, totalSize int64, path string) error {
-	var bytesDeleted, progressInPercentage int64
+	var bytesDeleted, recentlyLoggedProgress int64
 
 	l, err := initLogFile()
 	if err != nil {
@@ -315,7 +318,7 @@ func CleanFiles(files File, totalSize int64, path string) error {
 			return err
 		}
 
-		logProgressFiles(&progressInPercentage, totalSize, bytesDeleted, fmt.Sprintf("%s %d%%", MsgProgressCleaningFiles, progressInPercentage))
+		logProgressFiles(&recentlyLoggedProgress, totalSize, bytesDeleted, MsgProgressCleaningFiles)
 
 		LogToFile(l, file)
 	}
@@ -364,24 +367,30 @@ func BytesToMB(size int64) string {
 	return ThousandSeparator(strconv.FormatInt(size/BytesInMB, 10))
 }
 
-func logProgressFiles(progressInPercentage *int64, totalSize, bytesWritten int64, msg string) {
-	// howOftenToLog is in percentage
-	var howOftenToLog int64 = 10
+func logProgressFiles(recentlyLoggedProgress *int64, totalSize, bytesWritten int64, msg string) {
+	// howOftenToLog and progress are in percentage
+	var howOftenToLog, progress int64 = 10, 100
 
-	if totalSize > 0 && bytesWritten*100/totalSize > *progressInPercentage {
-		log.Println(msg)
-		*progressInPercentage += howOftenToLog
+	if totalSize > 0 {
+		progress = bytesWritten * 100 / totalSize
+	} else if totalSize == 0 && *recentlyLoggedProgress > 0 {
+		return
+	}
+
+	if progress > *recentlyLoggedProgress+howOftenToLog {
+		log.Printf("%s %d%%\n", msg, progress)
+		*recentlyLoggedProgress += progress
 	}
 }
 
-func logProgressFolders(progressInPercentage, counter *int, foldersLen int, msg string) {
-	// howOftenToLog is in percentage
-	howOftenToLog := 10
+func logProgressFolders(recentlyLoggedProgress, counter *int, foldersLen int, msg string) {
 	*counter++
+	// howOftenToLog and progress are in percentage
+	var howOftenToLog, progress = 10, *counter * 100 / foldersLen
 
-	if *counter*100/foldersLen > *progressInPercentage {
-		log.Println(msg)
-		*progressInPercentage += howOftenToLog
+	if progress > *recentlyLoggedProgress+howOftenToLog {
+		log.Printf("%s %d%%\n", msg, progress)
+		*recentlyLoggedProgress += progress
 	}
 	return
 }
@@ -391,7 +400,7 @@ func sortFoldersOrFiles(m interface{}) []string {
 	_, isFile := m.(File)
 
 	if !isFolder && !isFile {
-		panic("the function accepts only files and folders")
+		panic(ErrOnlyFoldersOrFiles)
 	}
 
 	res := make([]string, 0, reflect.ValueOf(m).Len())
@@ -418,7 +427,7 @@ func keepFoldersWithLongestPrefix(folders Folder) (res []string) {
 	sorted := sortFoldersOrFiles(folders)
 
 	for i := 0; i < len(folders)-1; i++ {
-		if !strings.HasPrefix(sorted[i+1], sorted[i]) {
+		if filepath.Dir(sorted[i+1]) == filepath.Dir(sorted[i]) || !strings.HasPrefix(sorted[i+1], sorted[i]) {
 			res = append(res, sorted[i])
 		}
 	}
@@ -431,7 +440,7 @@ func keepFoldersWithShortestPrefix(folders Folder) (res []string) {
 	sorted := sortFoldersOrFiles(folders)
 
 	for i := len(folders) - 1; i > 0; i-- {
-		if !strings.HasPrefix(sorted[i], sorted[i-1]) {
+		if filepath.Dir(sorted[i]) == filepath.Dir(sorted[i-1]) || !strings.HasPrefix(sorted[i], sorted[i-1]) {
 			res = append(res, sorted[i])
 		}
 	}

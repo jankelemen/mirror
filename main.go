@@ -9,14 +9,14 @@ import (
 )
 
 const (
-	MsgCanceling   = "canceling"
-	MsgCalculating = "gathering info about files"
-	MgsAreYouSure  = "Do you want to continue?"
-	MsgLogging     = "Also a log file named 'log' will be generated."
-	MsgNothingToDo = "there is nothing to do"
-	MsgErrOccurred = "an error occurred"
-	MsgFinished    = "the program finished successfully"
-	MsgDone        = "done"
+	MsgCanceling     = "canceling"
+	MsgGatheringInfo = "gathering info about files"
+	MgsAreYouSure    = "Do you want to continue?"
+	MsgLogging       = "Also a log file named 'log' will be generated."
+	MsgNothingToDo   = "there is nothing to do"
+	MsgErrOccurred   = "an error occurred:"
+	MsgFinished      = "the program finished successfully"
+	MsgDone          = "done"
 )
 
 func main() {
@@ -87,7 +87,7 @@ func doCleaning(dst, src string) {
 }
 
 func srcDstDiff(dst, src string, cleaningMod bool) (folders mirror.Folder, files mirror.File, totalSize int64) {
-	log.Println(MsgCalculating)
+	log.Println(MsgGatheringInfo)
 
 	srcFolders, srcFiles, err := mirror.ReadFolder(src)
 	checkErr(err)
