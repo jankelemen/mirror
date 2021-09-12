@@ -21,6 +21,7 @@ const (
 	ErrOnlyFoldersOrFiles      = CustomErr("the function accepts only folders and files")
 	FolderToIgnore             = "dont_mirror"
 	LogFile                    = "log"
+	ZeroPercent                = "0%"
 	BytesInMB                  = 1e6
 	FolderPerm                 = 0755
 	FilePerm                   = 0644
@@ -207,6 +208,7 @@ func MakeFolders(folders Folder, path string) error {
 	}
 
 	LogToFile(f, LogMadeFolders+"\n")
+	log.Println(MsgProgressMakingFolders, ZeroPercent)
 
 	sortedFolders := keepFoldersWithLongestPrefix(folders)
 	for _, folder := range sortedFolders {
@@ -233,6 +235,7 @@ func CleanFolders(folders Folder, path string) error {
 	}
 
 	LogToFile(f, LogCleanedFolders+"\n")
+	log.Println(MsgProgressCleaningFolders, ZeroPercent)
 
 	sortedFolders := keepFoldersWithShortestPrefix(folders)
 	for _, folder := range sortedFolders {
@@ -259,6 +262,7 @@ func CopyFiles(files File, totalSize int64, src, dst string) error {
 	}
 
 	LogToFile(l, LogCopiedFiles+"\n")
+	log.Println(MsgProgressCopyingFiles, ZeroPercent)
 
 	for _, file := range sortFoldersOrFiles(files) {
 		s, err := os.Open(filepath.Join(src, file))
@@ -306,6 +310,7 @@ func CleanFiles(files File, totalSize int64, path string) error {
 	}
 
 	LogToFile(l, LogCleanedFiles+"\n")
+	log.Println(MsgProgressCleaningFiles, ZeroPercent)
 
 	for _, file := range sortFoldersOrFiles(files) {
 		info, err := os.Stat(filepath.Join(path, file))
@@ -377,7 +382,7 @@ func logProgressFiles(recentlyLoggedProgress *int64, totalSize, bytesWritten int
 		return
 	}
 
-	if progress > *recentlyLoggedProgress+howOftenToLog {
+	if progress >= *recentlyLoggedProgress+howOftenToLog {
 		log.Printf("%s %d%%\n", msg, progress)
 		*recentlyLoggedProgress += progress
 	}
@@ -388,7 +393,7 @@ func logProgressFolders(recentlyLoggedProgress, counter *int, foldersLen int, ms
 	// howOftenToLog and progress are in percentage
 	var howOftenToLog, progress = 10, *counter * 100 / foldersLen
 
-	if progress > *recentlyLoggedProgress+howOftenToLog {
+	if progress >= *recentlyLoggedProgress+howOftenToLog {
 		log.Printf("%s %d%%\n", msg, progress)
 		*recentlyLoggedProgress += progress
 	}
