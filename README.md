@@ -7,3 +7,5 @@ in `dst` but not in `src` will be deleted. (Files with different sizes will be l
 
 I use this program for my personal use, so it isn't the fastest thing ever written, but it can handle a few million
 files just fine.
+
+To generate a binary run `go build main.go`
